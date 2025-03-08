@@ -3,8 +3,6 @@ import React, { useState, useRef } from 'react';
 import { Upload, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { validateFaceInImage } from '@/utils/faceDetection';
-import FaceValidationDialog from './FaceValidationDialog';
 
 interface ImageUploaderProps {
   onImageUpload: (image: string) => void;
@@ -14,13 +12,9 @@ interface ImageUploaderProps {
 const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzing }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [validationDialog, setValidationDialog] = useState({
-    open: false,
-    message: ""
-  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = async (file: File) => {
+  const handleFileChange = (file: File) => {
     if (!file) return;
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
@@ -30,21 +24,10 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
     }
 
     const reader = new FileReader();
-    reader.onload = async () => {
+    reader.onload = () => {
       const result = reader.result as string;
       setPreviewUrl(result);
-      
-      // Validate if a face is visible in the image
-      const validation = await validateFaceInImage(result);
-      
-      if (validation.isValid) {
-        onImageUpload(result);
-      } else {
-        setValidationDialog({
-          open: true,
-          message: validation.message
-        });
-      }
+      onImageUpload(result);
     };
     reader.onerror = () => {
       toast.error('Error reading the file');
@@ -75,14 +58,6 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
-  };
-  
-  const closeValidationDialog = () => {
-    setValidationDialog({
-      open: false,
-      message: ""
-    });
-    setPreviewUrl(null);
   };
 
   return (
@@ -145,12 +120,6 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
           </div>
         )}
       </div>
-      
-      <FaceValidationDialog 
-        open={validationDialog.open}
-        onClose={closeValidationDialog}
-        message={validationDialog.message}
-      />
     </div>
   );
 };
