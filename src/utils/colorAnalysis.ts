@@ -1,41 +1,65 @@
-
 import { ColorInfo } from '@/components/ColorPalette';
 import { AnalysisResultData } from '@/components/AnalysisResult';
 
+// This function creates a hash from the image data to ensure consistent results
+const generateImageHash = (imageUrl: string): number => {
+  // Extract a portion of the base64 string to create a consistent hash
+  // This ignores the metadata part of the data URL and focuses on the image data
+  const baseString = imageUrl.split(',')[1] || imageUrl;
+  const sampleLength = Math.min(baseString.length, 1000); // Use first 1000 chars to be efficient
+  
+  let hash = 0;
+  for (let i = 0; i < sampleLength; i++) {
+    const char = baseString.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  
+  // Ensure positive value
+  return Math.abs(hash);
+};
+
 // For a real application, this would use actual image analysis algorithms
-// This is a simplified demonstration version
+// This is a simplified version that returns consistent results for the same image
 export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
   return new Promise((resolve) => {
+    // Generate a consistent hash from the image
+    const imageHash = generateImageHash(imageUrl);
+    
+    // Use the hash to deterministically select an undertone
+    const undertones = ['warm', 'cool', 'neutral'] as const;
+    const undertoneIndex = imageHash % undertones.length;
+    const undertone = undertones[undertoneIndex];
+    
+    // Deterministically select a seasonal palette based on the undertone and hash
+    let seasonalPalette: 'spring' | 'summer' | 'autumn' | 'winter';
+    
+    if (undertone === 'warm') {
+      // For warm undertones, choose between spring and autumn
+      seasonalPalette = (imageHash % 2 === 0) ? 'spring' : 'autumn';
+    } else if (undertone === 'cool') {
+      // For cool undertones, choose between summer and winter
+      seasonalPalette = (imageHash % 2 === 0) ? 'summer' : 'winter';
+    } else {
+      // For neutral undertones, choose any season based on the hash
+      const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
+      seasonalPalette = seasons[imageHash % seasons.length];
+    }
+    
+    // Build the consistent result
+    const result: AnalysisResultData = {
+      undertone,
+      skinTone: getSkinToneName(undertone),
+      seasonalPalette,
+      bestColors: getBestColors(seasonalPalette),
+      neutralColors: getNeutralColors(seasonalPalette),
+      avoidColors: getAvoidColors(seasonalPalette)
+    };
+    
     // Simulate processing time
     setTimeout(() => {
-      // Choose a random undertone for demonstration
-      const undertones = ['warm', 'cool', 'neutral'] as const;
-      const undertone = undertones[Math.floor(Math.random() * undertones.length)];
-      
-      // Map undertone to seasonal palette
-      let seasonalPalette: 'spring' | 'summer' | 'autumn' | 'winter';
-      
-      if (undertone === 'warm') {
-        seasonalPalette = Math.random() > 0.5 ? 'spring' : 'autumn';
-      } else if (undertone === 'cool') {
-        seasonalPalette = Math.random() > 0.5 ? 'summer' : 'winter';
-      } else {
-        // Neutral undertone can be any season
-        const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
-        seasonalPalette = seasons[Math.floor(Math.random() * seasons.length)];
-      }
-      
-      const result: AnalysisResultData = {
-        undertone,
-        skinTone: getSkinToneName(undertone),
-        seasonalPalette,
-        bestColors: getBestColors(seasonalPalette),
-        neutralColors: getNeutralColors(seasonalPalette),
-        avoidColors: getAvoidColors(seasonalPalette)
-      };
-      
       resolve(result);
-    }, 2000); // Simulate 2 seconds of processing
+    }, 2000);
   });
 };
 
