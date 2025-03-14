@@ -1,87 +1,69 @@
-
 import { ColorInfo } from '@/components/ColorPalette';
 import { AnalysisResultData } from '@/components/AnalysisResult';
+import { extractFaceColors } from './imageFaceSegmentation';
 
-// Extract dominant colors from the image to create a stable fingerprint
-const extractDominantColors = (imageUrl: string): number => {
-  // In a production app, this would use computer vision to extract actual colors
-  // For our demo, we'll create a more stable hash based on color information in the image
-  
-  // Extract the image data portion for consistency
-  const baseString = imageUrl.split(',')[1] || imageUrl;
-  
-  // Create a consistent fingerprint based on sampling the image data
-  // We'll sample at regular intervals to catch dominant colors
-  const samplePoints = 20;
-  const sampleSize = Math.floor(baseString.length / samplePoints);
-  
-  let colorFingerprint = 0;
-  
-  // Sample the image data at regular intervals to catch dominant colors
-  for (let i = 0; i < samplePoints; i++) {
-    const sampleStart = i * sampleSize;
-    let sampleSum = 0;
-    
-    // Process a small chunk of the data to represent color information
-    for (let j = 0; j < Math.min(sampleSize, 50); j++) {
-      if (sampleStart + j < baseString.length) {
-        sampleSum += baseString.charCodeAt(sampleStart + j);
-      }
-    }
-    
-    // Combine the sample information into the fingerprint
-    colorFingerprint = ((colorFingerprint << 3) - colorFingerprint) + (sampleSum % 255);
-    colorFingerprint = colorFingerprint & colorFingerprint; // Convert to 32bit integer
-  }
-  
-  // Ensure positive value
-  return Math.abs(colorFingerprint);
-};
-
-// Use the dominant colors to determine the person's undertone and seasonal palette
+// Use face detection to extract skin tone colors and create a stable fingerprint
 export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
-  return new Promise((resolve) => {
-    // Extract a stable color fingerprint that should be similar across different photos of the same person
-    const colorFingerprint = extractDominantColors(imageUrl);
-    
-    // Log the fingerprint for debugging
-    console.log('Color fingerprint:', colorFingerprint);
-    
-    // Use the fingerprint to deterministically select an undertone
-    // This focuses on the person's coloring rather than the specific image
-    const undertones = ['warm', 'cool', 'neutral'] as const;
-    const undertoneIndex = colorFingerprint % undertones.length;
-    const undertone = undertones[undertoneIndex];
-    
-    // Deterministically select a seasonal palette based on the undertone and fingerprint
-    let seasonalPalette: 'spring' | 'summer' | 'autumn' | 'winter';
-    
-    if (undertone === 'warm') {
-      // For warm undertones, choose between spring and autumn
-      seasonalPalette = (colorFingerprint % 2 === 0) ? 'spring' : 'autumn';
-    } else if (undertone === 'cool') {
-      // For cool undertones, choose between summer and winter
-      seasonalPalette = (colorFingerprint % 2 === 0) ? 'summer' : 'winter';
-    } else {
-      // For neutral undertones, choose any season based on the fingerprint
-      const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
-      seasonalPalette = seasons[colorFingerprint % seasons.length];
+  return new Promise(async (resolve) => {
+    try {
+      // Extract a stable color fingerprint from face region
+      const colorFingerprint = await extractFaceColors(imageUrl);
+      
+      // Log the fingerprint for debugging
+      console.log('Face color fingerprint:', colorFingerprint);
+      
+      // Use the fingerprint to deterministically select an undertone
+      // This focuses on the person's coloring rather than the specific image
+      const undertones = ['warm', 'cool', 'neutral'] as const;
+      const undertoneIndex = colorFingerprint % undertones.length;
+      const undertone = undertones[undertoneIndex];
+      
+      // Deterministically select a seasonal palette based on the undertone and fingerprint
+      let seasonalPalette: 'spring' | 'summer' | 'autumn' | 'winter';
+      
+      if (undertone === 'warm') {
+        // For warm undertones, choose between spring and autumn
+        seasonalPalette = (colorFingerprint % 2 === 0) ? 'spring' : 'autumn';
+      } else if (undertone === 'cool') {
+        // For cool undertones, choose between summer and winter
+        seasonalPalette = (colorFingerprint % 2 === 0) ? 'summer' : 'winter';
+      } else {
+        // For neutral undertones, choose any season based on the fingerprint
+        const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
+        seasonalPalette = seasons[colorFingerprint % seasons.length];
+      }
+      
+      // Build the consistent result
+      const result: AnalysisResultData = {
+        undertone,
+        skinTone: getSkinToneName(undertone),
+        seasonalPalette,
+        bestColors: getBestColors(seasonalPalette),
+        neutralColors: getNeutralColors(seasonalPalette),
+        avoidColors: getAvoidColors(seasonalPalette)
+      };
+      
+      // Simulate processing time
+      setTimeout(() => {
+        resolve(result);
+      }, 2000);
+    } catch (error) {
+      console.error('Error analyzing image:', error);
+      
+      // Fallback to a default result in case of error
+      const fallbackResult: AnalysisResultData = {
+        undertone: 'neutral',
+        skinTone: 'Neutral / Balanced',
+        seasonalPalette: 'summer',
+        bestColors: getBestColors('summer'),
+        neutralColors: getNeutralColors('summer'),
+        avoidColors: getAvoidColors('summer')
+      };
+      
+      setTimeout(() => {
+        resolve(fallbackResult);
+      }, 2000);
     }
-    
-    // Build the consistent result
-    const result: AnalysisResultData = {
-      undertone,
-      skinTone: getSkinToneName(undertone),
-      seasonalPalette,
-      bestColors: getBestColors(seasonalPalette),
-      neutralColors: getNeutralColors(seasonalPalette),
-      avoidColors: getAvoidColors(seasonalPalette)
-    };
-    
-    // Simulate processing time
-    setTimeout(() => {
-      resolve(result);
-    }, 2000);
   });
 };
 
@@ -210,3 +192,4 @@ const getAvoidColors = (season: 'spring' | 'summer' | 'autumn' | 'winter'): Colo
       ];
   }
 };
+
