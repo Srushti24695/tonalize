@@ -3,7 +3,7 @@
  * Face detection and skin tone analysis utility
  */
 
-// Helper function to extract faces from an image
+// Helper function to extract faces from an image with improved consistency
 export const detectFace = (imageUrl: string): Promise<{
   faceDetected: boolean;
   faceCanvas?: HTMLCanvasElement;
@@ -22,7 +22,7 @@ export const detectFace = (imageUrl: string): Promise<{
       }
       
       // Normalize image size to reduce variance in processing
-      const maxSize = 600; // Limit maximum dimension
+      const maxSize = 500; // Use a consistent size for all face detection
       let width = img.width;
       let height = img.height;
       
@@ -41,18 +41,18 @@ export const detectFace = (imageUrl: string): Promise<{
       canvas.width = width;
       canvas.height = height;
       
-      // Apply some preprocessing - draw in grayscale first to normalize lighting
-      ctx.filter = 'contrast(1.1) brightness(1.05)';
+      // Apply more aggressive normalization of colors
+      ctx.filter = 'contrast(1.2) brightness(1.1) saturate(0.9)';
       ctx.drawImage(img, 0, 0, width, height);
       ctx.filter = 'none';
       
-      // Focus on upper middle portion where face usually is
+      // Focus on middle portion where face usually is
       const centerX = Math.floor(width / 2);
-      const centerY = Math.floor(height / 3); // Focus on upper third
+      const centerY = Math.floor(height * 0.4); // Focus on upper portion
       
       // Create a face detection region (center portion of upper half)
-      const faceRegionWidth = Math.floor(width * 0.5); // 50% of width
-      const faceRegionHeight = Math.floor(height * 0.5); // 50% of height
+      const faceRegionWidth = Math.floor(width * 0.6); // 60% of width
+      const faceRegionHeight = Math.floor(height * 0.6); // 60% of height
       
       const startX = Math.max(0, centerX - Math.floor(faceRegionWidth / 2));
       const startY = Math.max(0, centerY - Math.floor(faceRegionHeight / 2));
@@ -109,21 +109,21 @@ const analyzeForSkinTone = (pixels: Uint8ClampedArray): boolean => {
     const g = pixels[i + 1];
     const b = pixels[i + 2];
     
-    // Improved skin tone detection with more precise conditions
+    // Use broader skin tone detection to catch more variations
     const isSkinTone = 
-      r > 60 && g > 40 && b > 20 && // Lower bounds
-      r > b && // Red greater than blue
-      Math.abs(r - g) < 50 && // Red and green not too far apart
-      r > g && // Red greater than green
-      r < 240 && g < 220 && b < 200; // Upper bounds (avoid pure white/bright areas)
+      r > 50 && g > 35 && b > 20 && // Lower bounds (relaxed)
+      r > b - 10 && // Red greater than blue (with tolerance)
+      Math.abs(r - g) < 60 && // Red and green not too far apart (increased tolerance)
+      r > g - 10 && // Red generally greater than green (with tolerance)
+      r < 245 && g < 225 && b < 205; // Upper bounds (avoid pure white/bright areas)
     
     if (isSkinTone) {
       skinTonePixelCount++;
       
-      // Add to color histogram (simplified to 10 value buckets)
-      const rBucket = Math.floor(r / 10);
-      const gBucket = Math.floor(g / 10);
-      const bBucket = Math.floor(b / 10);
+      // Add to color histogram (simplified to 5 value buckets for more stability)
+      const rBucket = Math.floor(r / 20);
+      const gBucket = Math.floor(g / 20);
+      const bBucket = Math.floor(b / 20);
       const colorKey = `${rBucket}_${gBucket}_${bBucket}`;
       
       colorHistogram[colorKey] = (colorHistogram[colorKey] || 0) + 1;
@@ -133,12 +133,12 @@ const analyzeForSkinTone = (pixels: Uint8ClampedArray): boolean => {
   // Calculate the percentage of skin tone pixels
   const skinTonePercentage = (skinTonePixelCount / totalPixels) * 100;
   
-  // Check color histogram for face-like distribution (multiple similar skin tones)
+  // Check color histogram for face-like distribution
   const histogramEntries = Object.entries(colorHistogram);
-  const hasSkinToneDistribution = histogramEntries.length >= 5; // Multiple color clusters
+  const hasSkinToneDistribution = histogramEntries.length >= 3; // Multiple color clusters
   
-  // If at least 30% of pixels look like skin tone and we have diverse skin tone colors, we likely found a face
-  return skinTonePercentage > 25 && hasSkinToneDistribution;
+  // If at least 20% of pixels look like skin tone and we have diverse skin tone colors, we likely found a face
+  return skinTonePercentage > 20 && hasSkinToneDistribution;
 };
 
 // Extract skin undertone from face image with more consistent results
@@ -146,8 +146,8 @@ export const analyzeSkinUndertone = (faceCanvas: HTMLCanvasElement): 'warm' | 'c
   const ctx = faceCanvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return 'neutral';
   
-  // Apply color correction to normalize lighting conditions
-  ctx.filter = 'contrast(1.05) saturate(1.1)';
+  // Apply stronger color correction to normalize lighting conditions
+  ctx.filter = 'contrast(1.1) saturate(1.0) brightness(1.1)';
   const tempCanvas = document.createElement('canvas');
   tempCanvas.width = faceCanvas.width;
   tempCanvas.height = faceCanvas.height;
@@ -172,13 +172,13 @@ export const analyzeSkinUndertone = (faceCanvas: HTMLCanvasElement): 'warm' | 'c
     const g = data[i + 1];
     const b = data[i + 2];
     
-    // More precise skin tone detection
+    // Broader skin tone detection
     const isSkinTone = 
-      r > 60 && g > 40 && b > 20 && // Lower bounds
-      r > b && // Red greater than blue
-      Math.abs(r - g) < 50 && // Red and green not too far apart
-      r > g && // Red greater than green
-      r < 240 && g < 220 && b < 200; // Upper bounds (avoid pure white areas)
+      r > 50 && g > 35 && b > 20 && // Lower bounds (relaxed)
+      r > b - 10 && // Red greater than blue (with tolerance)
+      Math.abs(r - g) < 60 && // Red and green not too far apart (increased tolerance)
+      r > g - 10 && // Red generally greater than green (with tolerance)
+      r < 245 && g < 225 && b < 205; // Upper bounds (avoid pure white areas)
     
     if (isSkinTone) {
       totalR += r;
@@ -192,7 +192,7 @@ export const analyzeSkinUndertone = (faceCanvas: HTMLCanvasElement): 'warm' | 'c
   }
   
   // If we didn't find enough skin pixels, return neutral
-  if (skinPixelCount < 100) return 'neutral';
+  if (skinPixelCount < 50) return 'neutral';
   
   // Sort skin values to find median (more robust than average)
   skinValues.sort((a, b) => (a.r + a.g + a.b) - (b.r + b.g + b.b));
@@ -208,25 +208,24 @@ export const analyzeSkinUndertone = (faceCanvas: HTMLCanvasElement): 'warm' | 'c
   const avgG = totalG / skinPixelCount;
   const avgB = totalB / skinPixelCount;
   
-  // Combine median and average for more stability
-  const finalR = (medianR * 0.6) + (avgR * 0.4);
-  const finalG = (medianG * 0.6) + (avgG * 0.4);
-  const finalB = (medianB * 0.6) + (avgB * 0.4);
+  // Use 80% median and 20% average for more stability
+  const finalR = (medianR * 0.8) + (avgR * 0.2);
+  const finalG = (medianG * 0.8) + (avgG * 0.2);
+  const finalB = (medianB * 0.8) + (avgB * 0.2);
   
   // Determine undertone based on the relationship between red, green, and blue
   const redMinusBlue = finalR - finalB;
-  const greenMinusBlue = finalG - finalB;
+  const redMinusGreen = finalR - finalG;
   
   console.log(`Skin tone analysis - R: ${finalR.toFixed(2)}, G: ${finalG.toFixed(2)}, B: ${finalB.toFixed(2)}`);
-  console.log(`R-B: ${redMinusBlue.toFixed(2)}, G-B: ${greenMinusBlue.toFixed(2)}`);
+  console.log(`R-B: ${redMinusBlue.toFixed(2)}, R-G: ${redMinusGreen.toFixed(2)}`);
   
-  // More consistent thresholds for undertone determination
-  if (redMinusBlue > 35 && finalR > finalG + 15) {
+  // Use simpler, more stable thresholds for undertone determination
+  if (redMinusBlue > 30 && redMinusGreen > 12) {
     return 'warm';
-  } else if (redMinusBlue < 20 || finalB > finalG - 5) {
+  } else if (redMinusBlue < 22 || finalB > finalG) {
     return 'cool';
   } else {
     return 'neutral';
   }
 };
-

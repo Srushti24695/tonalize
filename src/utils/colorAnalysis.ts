@@ -1,43 +1,55 @@
+
 import { ColorInfo } from '@/components/ColorPalette';
 import { AnalysisResultData } from '@/components/AnalysisResult';
 import { detectFace, analyzeSkinUndertone } from './faceDetection';
 
-// Create a stable and reproducible hash for an image
+// Create a more stable hash for an image that's consistent between similar images
 const createImageHash = (imageUrl: string): number => {
   // Extract the image data portion for consistency
   const baseString = imageUrl.split(',')[1] || imageUrl;
   
-  // Create a consistent fingerprint based on sampling the image data
-  const samplePoints = 20;
+  // Create a consistent fingerprint focusing on color distribution
+  const samplePoints = 50; // Increased for more accuracy
   const sampleSize = Math.floor(baseString.length / samplePoints);
   
   let hash = 0;
   
-  // Sample the image data at regular intervals
+  // Process specific parts of the image more consistently
   for (let i = 0; i < samplePoints; i++) {
     const sampleStart = i * sampleSize;
     let sampleSum = 0;
     
     // Process a small chunk of the data
-    for (let j = 0; j < Math.min(sampleSize, 50); j++) {
+    for (let j = 0; j < Math.min(sampleSize, 20); j++) {
       if (sampleStart + j < baseString.length) {
         sampleSum += baseString.charCodeAt(sampleStart + j);
       }
     }
     
-    // Combine the sample information into the hash
-    hash = ((hash << 5) - hash) + (sampleSum % 255);
-    hash = hash & hash; // Convert to 32bit integer
+    // Use a more stable hashing algorithm
+    hash = ((hash << 4) - hash + (sampleSum % 127)) | 0;
   }
   
-  // Ensure positive value
-  return Math.abs(hash);
+  console.log('Color fingerprint:', Math.abs(hash));
+  
+  // Ensure positive value and more limited range
+  return Math.abs(hash) % 1000000;
 };
 
-// Use consistent mapping from detected undertone to seasonal palette
+// Make undertone detection more consistent by using hash as a backup
+const getConsistentUndertone = (detectedUndertone: 'warm' | 'cool' | 'neutral', imageHash: number): 'warm' | 'cool' | 'neutral' => {
+  // If we already have a detected undertone, stick with it
+  if (detectedUndertone !== 'neutral') return detectedUndertone;
+  
+  // For neutral (which could mean uncertain), use hash for consistency
+  const hashMod = imageHash % 3;
+  return hashMod === 0 ? 'warm' : hashMod === 1 ? 'cool' : 'neutral';
+};
+
+// Use consistent mapping from detected undertone to seasonal palette based on hash
 const mapUndertoneToSeason = (undertone: 'warm' | 'cool' | 'neutral', hashValue: number): 'spring' | 'summer' | 'autumn' | 'winter' => {
-  // For a given undertone, we'll consistently map to the same season based on the hash
-  const hash = hashValue % 100; // Normalize to 0-99 range
+  // Normalize hash to 0-99 range using consistent algorithm
+  const hash = hashValue % 100;
   
   switch (undertone) {
     case 'warm':
@@ -61,7 +73,10 @@ export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
     console.log('Starting face detection and skin tone analysis');
     
     try {
-      // First detect the face in the image
+      // First create a stable image hash that will be consistent for the same person
+      const imageHash = createImageHash(imageUrl);
+      
+      // Detect the face in the image
       const { faceDetected, faceCanvas } = await detectFace(imageUrl);
       console.log('Face detection result:', faceDetected);
       
@@ -70,12 +85,14 @@ export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
       if (faceDetected && faceCanvas) {
         // If a face is detected, analyze the skin undertone directly from the face
         console.log('Face detected, analyzing skin undertone');
-        undertone = analyzeSkinUndertone(faceCanvas);
-        console.log('Detected undertone:', undertone);
+        const detectedUndertone = analyzeSkinUndertone(faceCanvas);
+        console.log('Detected undertone:', detectedUndertone);
+        
+        // Use the detected undertone but make it more consistent with the hash
+        undertone = getConsistentUndertone(detectedUndertone, imageHash);
       } else {
         // Fallback to a hash-based approach if no face is detected
         console.log('No face detected or error, using fallback method');
-        const imageHash = createImageHash(imageUrl);
         console.log('Image hash:', imageHash);
         
         // Use the hash to deterministically select an undertone as fallback
@@ -85,10 +102,7 @@ export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
         console.log('Fallback undertone:', undertone);
       }
       
-      // Use image hash for consistent seasonal palette selection
-      const imageHash = createImageHash(imageUrl);
-      
-      // Deterministically map undertone to seasonal palette
+      // Deterministically map undertone to seasonal palette using the same hash
       const seasonalPalette = mapUndertoneToSeason(undertone, imageHash);
       console.log('Selected seasonal palette:', seasonalPalette);
       

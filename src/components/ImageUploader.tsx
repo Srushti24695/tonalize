@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Upload, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,7 +31,8 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
             return;
           }
           
-          const maxSize = 800;
+          // Use consistent size for all images to reduce variation
+          const maxSize = 600; // Reduced slightly for more consistent processing
           let width = img.width;
           let height = img.height;
           
@@ -49,11 +51,13 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
           canvas.width = width;
           canvas.height = height;
           
-          ctx.filter = 'contrast(1.05) brightness(1.02)';
+          // Apply more aggressive normalization of colors
+          ctx.filter = 'contrast(1.1) brightness(1.05) saturate(0.95)';
           ctx.drawImage(img, 0, 0, width, height);
           ctx.filter = 'none';
           
-          const normalizedImage = canvas.toDataURL(file.type);
+          // Always use consistent image format and quality
+          const normalizedImage = canvas.toDataURL('image/jpeg', 0.92);
           resolve(normalizedImage);
         };
         
