@@ -1,6 +1,7 @@
 
 import { ColorInfo } from '@/components/ColorPalette';
 import { AnalysisResultData } from '@/components/AnalysisResult';
+import { detectFace, analyzeSkinUndertone } from './faceDetection';
 
 // Extract dominant colors from the image to create a stable fingerprint
 const extractDominantColors = (imageUrl: string): number => {
@@ -40,20 +41,37 @@ const extractDominantColors = (imageUrl: string): number => {
 
 // Use the dominant colors to determine the person's undertone and seasonal palette
 export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
-  return new Promise((resolve) => {
-    // Extract a stable color fingerprint that should be similar across different photos of the same person
+  return new Promise(async (resolve) => {
+    console.log('Starting face detection and skin tone analysis');
+    
+    // First detect the face in the image
+    const { faceDetected, faceCanvas } = await detectFace(imageUrl);
+    console.log('Face detection result:', faceDetected);
+    
+    let undertone: 'warm' | 'cool' | 'neutral';
+    
+    if (faceDetected && faceCanvas) {
+      // If a face is detected, analyze the skin undertone directly from the face
+      console.log('Face detected, analyzing skin undertone');
+      undertone = analyzeSkinUndertone(faceCanvas);
+      console.log('Detected undertone:', undertone);
+    } else {
+      // Fallback to the original method if no face is detected
+      console.log('No face detected or error, using fallback method');
+      const colorFingerprint = extractDominantColors(imageUrl);
+      console.log('Color fingerprint:', colorFingerprint);
+      
+      // Use the fingerprint to deterministically select an undertone as fallback
+      const undertones = ['warm', 'cool', 'neutral'] as const;
+      const undertoneIndex = colorFingerprint % undertones.length;
+      undertone = undertones[undertoneIndex];
+      console.log('Fallback undertone:', undertone);
+    }
+    
+    // Extract a stable color fingerprint for seasonal palette
     const colorFingerprint = extractDominantColors(imageUrl);
     
-    // Log the fingerprint for debugging
-    console.log('Color fingerprint:', colorFingerprint);
-    
-    // Use the fingerprint to deterministically select an undertone
-    // This focuses on the person's coloring rather than the specific image
-    const undertones = ['warm', 'cool', 'neutral'] as const;
-    const undertoneIndex = colorFingerprint % undertones.length;
-    const undertone = undertones[undertoneIndex];
-    
-    // Deterministically select a seasonal palette based on the undertone and fingerprint
+    // Deterministically select a seasonal palette based on the undertone
     let seasonalPalette: 'spring' | 'summer' | 'autumn' | 'winter';
     
     if (undertone === 'warm') {
@@ -81,7 +99,7 @@ export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
     // Simulate processing time
     setTimeout(() => {
       resolve(result);
-    }, 2000);
+    }, 1500);
   });
 };
 

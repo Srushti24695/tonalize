@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { detectFace } from '@/utils/faceDetection';
 
 interface ImageUploaderProps {
   onImageUpload: (image: string) => void;
@@ -12,9 +13,10 @@ interface ImageUploaderProps {
 const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzing }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isFaceDetecting, setIsFaceDetecting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (file: File) => {
+  const handleFileChange = async (file: File) => {
     if (!file) return;
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
@@ -24,11 +26,34 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const result = reader.result as string;
       setPreviewUrl(result);
-      onImageUpload(result);
+      
+      // Check for face in the image
+      setIsFaceDetecting(true);
+      try {
+        const { faceDetected } = await detectFace(result);
+        setIsFaceDetecting(false);
+        
+        if (!faceDetected) {
+          toast.warning("No face detected clearly. Analysis may be less accurate.", {
+            duration: 5000,
+            description: "For best results, use a clear photo of your face."
+          });
+        }
+        
+        // Still proceed with the image analysis
+        onImageUpload(result);
+      } catch (error) {
+        setIsFaceDetecting(false);
+        toast.warning("Couldn't analyze the face. Using whole image instead.", {
+          duration: 3000
+        });
+        onImageUpload(result);
+      }
     };
+    
     reader.onerror = () => {
       toast.error('Error reading the file');
     };
@@ -77,7 +102,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
             </div>
             <h3 className="text-lg font-medium mb-2">Upload your photo</h3>
             <p className="text-sm text-muted-foreground text-center mb-6">
-              Drag and drop or select a clear, well-lit photo of your face
+              For best results, upload a clear photo of your face in natural lighting
             </p>
             <input
               type="file"
@@ -104,7 +129,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
               <Button
                 variant="outline"
                 onClick={triggerFileInput}
-                disabled={isAnalyzing}
+                disabled={isAnalyzing || isFaceDetecting}
                 className="flex-1"
               >
                 Change Photo
@@ -117,6 +142,11 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
                 accept="image/jpeg, image/png, image/jpg"
               />
             </div>
+            {isFaceDetecting && (
+              <div className="text-center text-sm text-muted-foreground animate-pulse">
+                Detecting face...
+              </div>
+            )}
           </div>
         )}
       </div>
