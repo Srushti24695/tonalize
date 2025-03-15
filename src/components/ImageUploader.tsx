@@ -31,33 +31,40 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
             return;
           }
           
-          // Use consistent size for all images to reduce variation
-          const maxSize = 600; // Reduced slightly for more consistent processing
-          let width = img.width;
-          let height = img.height;
+          // Always resize to exactly the same dimensions for consistency
+          const fixedWidth = 500;
+          const fixedHeight = 500;
           
-          if (width > height) {
-            if (width > maxSize) {
-              height = Math.floor(height * (maxSize / width));
-              width = maxSize;
-            }
+          canvas.width = fixedWidth;
+          canvas.height = fixedHeight;
+          
+          // Fill with white background first to normalize transparency
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, fixedWidth, fixedHeight);
+          
+          // Draw image centered and cropped to fill the square
+          const sourceAspect = img.width / img.height;
+          const targetAspect = fixedWidth / fixedHeight;
+          
+          let sourceX = 0, sourceY = 0, sourceWidth = img.width, sourceHeight = img.height;
+          
+          if (sourceAspect > targetAspect) {
+            // Source is wider, crop sides
+            sourceWidth = img.height * targetAspect;
+            sourceX = (img.width - sourceWidth) / 2;
           } else {
-            if (height > maxSize) {
-              width = Math.floor(width * (maxSize / height));
-              height = maxSize;
-            }
+            // Source is taller, crop top/bottom
+            sourceHeight = img.width / targetAspect;
+            sourceY = (img.height - sourceHeight) / 2;
           }
           
-          canvas.width = width;
-          canvas.height = height;
-          
-          // Apply more aggressive normalization of colors
-          ctx.filter = 'contrast(1.1) brightness(1.05) saturate(0.95)';
-          ctx.drawImage(img, 0, 0, width, height);
+          // Apply strong normalization to deal with lighting differences
+          ctx.filter = 'contrast(1.2) brightness(1.05) saturate(0.9)';
+          ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, fixedWidth, fixedHeight);
           ctx.filter = 'none';
           
-          // Always use consistent image format and quality
-          const normalizedImage = canvas.toDataURL('image/jpeg', 0.92);
+          // Always use exact same format and quality settings
+          const normalizedImage = canvas.toDataURL('image/jpeg', 0.9);
           resolve(normalizedImage);
         };
         
