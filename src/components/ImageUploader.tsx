@@ -1,9 +1,8 @@
 
 import React, { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon, AlertCircle } from 'lucide-react';
+import { Upload, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { segmentPersonAndDetectFace } from '@/utils/imageFaceSegmentation';
 
 interface ImageUploaderProps {
   onImageUpload: (image: string) => void;
@@ -12,12 +11,10 @@ interface ImageUploaderProps {
 
 const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzing }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [originalImage, setOriginalImage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [noFaceDetected, setNoFaceDetected] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = async (file: File) => {
+  const handleFileChange = (file: File) => {
     if (!file) return;
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
@@ -26,43 +23,15 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
       return;
     }
 
-    // Reset states
-    setNoFaceDetected(false);
-    
-    // Read the original file
     const reader = new FileReader();
-    reader.onload = async () => {
+    reader.onload = () => {
       const result = reader.result as string;
-      setOriginalImage(result);
-      
-      // Process image to detect and segment face
-      try {
-        const segmentationResult = await segmentPersonAndDetectFace(result);
-        
-        if (!segmentationResult.hasFace) {
-          // No face detected
-          setPreviewUrl(result); // Show original image
-          setNoFaceDetected(true);
-          toast.warning('No face detected. For best results, upload a clear photo of your face.');
-          onImageUpload(result); // Still allow analysis with original image
-        } else {
-          // Face detected - use segmented image
-          setPreviewUrl(segmentationResult.segmentedImageData);
-          onImageUpload(segmentationResult.segmentedImageData || result);
-          setNoFaceDetected(false);
-        }
-      } catch (error) {
-        console.error('Error processing image:', error);
-        setPreviewUrl(result);
-        onImageUpload(result);
-        toast.error('Error processing image. Using original image instead.');
-      }
+      setPreviewUrl(result);
+      onImageUpload(result);
     };
-    
     reader.onerror = () => {
       toast.error('Error reading the file');
     };
-    
     reader.readAsDataURL(file);
   };
 
@@ -131,14 +100,6 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
                 className="w-full h-full object-cover rounded-lg" 
               />
             </div>
-            
-            {noFaceDetected && (
-              <div className="p-3 bg-orange-100 border border-orange-200 rounded-lg flex items-center gap-2 text-sm text-orange-700 mb-2">
-                <AlertCircle className="w-4 h-4 text-orange-500" />
-                <span>No face detected. Results may be less accurate.</span>
-              </div>
-            )}
-            
             <div className="flex justify-between gap-4">
               <Button
                 variant="outline"
