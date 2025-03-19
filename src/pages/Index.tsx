@@ -28,10 +28,8 @@ const Index = () => {
       setAnalysisResult(result);
       toast.success('Analysis complete!');
     } catch (error) {
-      toast.error('No human face detected. Please upload a photo with a clear face.');
+      toast.error('Error analyzing image. Please try again.');
       console.error('Analysis error:', error);
-      // Clear the image since analysis failed
-      setImage(null);
     } finally {
       setIsAnalyzing(false);
     }
