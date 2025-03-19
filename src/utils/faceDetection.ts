@@ -1,9 +1,8 @@
-
 /**
  * Face detection and skin tone analysis utility
  */
 
-// Helper function to extract faces from an image with improved consistency
+// Improved helper function to extract faces from an image with better human detection
 export const detectFace = (imageUrl: string): Promise<{
   faceDetected: boolean;
   faceCanvas?: HTMLCanvasElement;
@@ -48,9 +47,10 @@ export const detectFace = (imageUrl: string): Promise<{
       const faceSignature = calculateFaceSignature(centerRegionData);
       
       // Check if there is significant skin tone color in this region
-      const hasSkinTone = analyzeForSkinTone(centerRegionData.data);
+      const { hasSkinTone, humanConfidence } = analyzeForSkinTone(centerRegionData.data);
       
-      if (hasSkinTone) {
+      // Only proceed if we're confident this is a human face (higher threshold)
+      if (hasSkinTone && humanConfidence > 0.65) {
         // Create a new canvas with just the face region
         const faceCanvas = document.createElement('canvas');
         faceCanvas.width = centerRegionSize;
@@ -71,8 +71,7 @@ export const detectFace = (imageUrl: string): Promise<{
           });
         }
       } else {
-        // Even without a clear face detection, return the signature
-        // This will help provide consistent results
+        // If not confident this is a human face, return false
         resolve({ 
           faceDetected: false,
           faceSignature
@@ -142,14 +141,21 @@ const calculateFaceSignature = (imageData: ImageData): number[] => {
   return signature;
 };
 
-// Improved skin tone detection with broader range
-const analyzeForSkinTone = (pixels: Uint8ClampedArray): boolean => {
+// Improved skin tone detection with better human face verification
+const analyzeForSkinTone = (pixels: Uint8ClampedArray): { 
+  hasSkinTone: boolean; 
+  humanConfidence: number;
+} => {
   // Count pixels that are in the general skin tone range
   let skinTonePixelCount = 0;
   const totalPixels = pixels.length / 4;
   
   // Collect color distribution to check for face-like patterns
   const colorHistogram: Record<string, number> = {};
+  
+  // Track features that suggest a human face
+  let skinColorVariety = 0;
+  let skinToneConsistency = 0;
   
   // Analyze every pixel with very broad skin tone range
   for (let i = 0; i < pixels.length; i += 4) {
@@ -178,15 +184,36 @@ const analyzeForSkinTone = (pixels: Uint8ClampedArray): boolean => {
     }
   }
   
-  // Calculate the percentage of skin tone pixels - lower threshold for better detection
+  // Calculate the percentage of skin tone pixels
   const skinTonePercentage = (skinTonePixelCount / totalPixels) * 100;
   
-  // Check color histogram for face-like distribution
+  // Check color histogram for face-like distribution and color variety
   const histogramEntries = Object.entries(colorHistogram);
-  const hasSkinToneDistribution = histogramEntries.length >= 2; // Need at least 2 color clusters
   
-  // If at least 15% of pixels look like skin tone and we have diverse skin tone colors, we likely found a face
-  return skinTonePercentage > 15 && hasSkinToneDistribution;
+  // Human faces typically have 2-8 distinct skin tone clusters
+  const distinctClusters = histogramEntries.length;
+  skinColorVariety = Math.min(distinctClusters / 8, 1); // Normalize to 0-1
+  
+  // Check for dominant skin tone clusters (human faces have consistent skin tones)
+  let dominantClusters = 0;
+  for (const [_, count] of histogramEntries) {
+    if (count > totalPixels / 50) { // If cluster contains more than 2% of pixels
+      dominantClusters++;
+    }
+  }
+  
+  skinToneConsistency = Math.min(dominantClusters / 3, 1); // Normalize to 0-1
+  
+  // Calculate confidence that this is a human face
+  // Weight factors: skin percentage (50%), color variety (25%), consistency (25%)
+  const skinPercentageFactor = Math.min(skinTonePercentage / 30, 1) * 0.5; // Max at 30%
+  const humanConfidence = skinPercentageFactor + (skinColorVariety * 0.25) + (skinToneConsistency * 0.25);
+  
+  // If at least 15% of pixels look like skin tone and we have diverse skin tone colors
+  // and our confidence is reasonable, we likely found a face
+  const hasSkinTone = skinTonePercentage > 15 && distinctClusters >= 2 && humanConfidence > 0.5;
+  
+  return { hasSkinTone, humanConfidence };
 };
 
 // Extract skin undertone from face image with more consistent results

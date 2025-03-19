@@ -57,13 +57,20 @@ const createSkinToneHash = (faceSignature: number[]): number => {
 
 // Analyze image and provide consistent color recommendations
 export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
-  return new Promise(async (resolve) => {
+  return new Promise(async (resolve, reject) => {
     console.log('Starting face detection and skin tone analysis');
     
     try {
       // Detect the face in the image with our enhanced detection
       const { faceDetected, faceCanvas, faceSignature } = await detectFace(imageUrl);
       console.log('Face detection result:', faceDetected);
+      
+      // If no face is detected, reject the promise to trigger error handling
+      if (!faceDetected) {
+        console.error('No face detected in the image');
+        reject(new Error('No face detected in the image'));
+        return;
+      }
       
       // If we have a face signature, check for previous analyses of similar faces
       if (faceSignature && faceSignature.length > 0) {
@@ -96,19 +103,10 @@ export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
         // Use the detected undertone but make it more consistent with the hash
         undertone = getConsistentUndertone(detectedUndertone, skinToneHash);
       } else {
-        // Even without clear face detection, if we have a signature, use it for consistency
-        if (faceSignature && faceSignature.length > 0) {
-          console.log('No clear face detected, but using face signature for consistency');
-          
-          // Use the hash based on the signature for consistent undertone selection
-          const undertones = ['warm', 'cool', 'neutral'] as const;
-          const undertoneIndex = skinToneHash % undertones.length;
-          undertone = undertones[undertoneIndex];
-        } else {
-          // Last resort fallback
-          console.log('Using complete fallback method');
-          undertone = 'neutral';
-        }
+        // This should not happen since we're rejecting if !faceDetected,
+        // but as a fallback just in case
+        reject(new Error('Face analysis failed'));
+        return;
       }
       
       console.log('Final undertone selection:', undertone);
@@ -146,16 +144,8 @@ export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
       }, 1000);
     } catch (error) {
       console.error('Error in analyzeImage:', error);
-      // Provide a fallback result in case of error
-      const fallbackResult: AnalysisResultData = {
-        undertone: 'neutral',
-        skinTone: 'Neutral / Balanced',
-        seasonalPalette: 'summer',
-        bestColors: getBestColors('summer'),
-        neutralColors: getNeutralColors('summer'),
-        avoidColors: getAvoidColors('summer')
-      };
-      setTimeout(() => resolve(fallbackResult), 1000);
+      // Reject the promise to trigger error handling in the component
+      reject(new Error('No human face detected or analysis failed'));
     }
   });
 };

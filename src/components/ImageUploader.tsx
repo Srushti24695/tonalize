@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { Upload, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -41,39 +40,32 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
             return;
           }
           
-          // Always resize to exactly the same dimensions for consistency
           const fixedWidth = 500;
           const fixedHeight = 500;
           
           canvas.width = fixedWidth;
           canvas.height = fixedHeight;
           
-          // Fill with white background first to normalize transparency
           ctx.fillStyle = '#FFFFFF';
           ctx.fillRect(0, 0, fixedWidth, fixedHeight);
           
-          // Draw image centered and cropped to fill the square
           const sourceAspect = img.width / img.height;
           const targetAspect = fixedWidth / fixedHeight;
           
           let sourceX = 0, sourceY = 0, sourceWidth = img.width, sourceHeight = img.height;
           
           if (sourceAspect > targetAspect) {
-            // Source is wider, crop sides
             sourceWidth = img.height * targetAspect;
             sourceX = (img.width - sourceWidth) / 2;
           } else {
-            // Source is taller, crop top/bottom
             sourceHeight = img.width / targetAspect;
             sourceY = (img.height - sourceHeight) / 2;
           }
           
-          // Apply strong normalization to deal with lighting differences
           ctx.filter = 'contrast(1.2) brightness(1.05) saturate(0.9)';
           ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, fixedWidth, fixedHeight);
           ctx.filter = 'none';
           
-          // Always use exact same format and quality settings
           const normalizedImage = canvas.toDataURL('image/jpeg', 0.9);
           resolve(normalizedImage);
         };
@@ -113,7 +105,6 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
       setIsFaceDetecting(false);
       
       if (!faceDetected) {
-        // Open the no face dialog instead of just showing a toast
         setNoFaceDialogOpen(true);
         return;
       }
@@ -121,12 +112,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
       onImageUpload(normalizedImage);
     } catch (error) {
       setIsFaceDetecting(false);
-      toast.warning("Couldn't analyze the face. Using whole image instead.", {
+      toast.error("Couldn't analyze the image. Please try with a clear photo of a face.", {
         duration: 3000
       });
-      if (previewUrl) {
-        onImageUpload(previewUrl);
-      }
     }
   };
 
@@ -152,13 +140,6 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
   const triggerFileInput = () => {
     if (fileInputRef.current) {
       fileInputRef.current.click();
-    }
-  };
-
-  const handleProceedAnyway = () => {
-    setNoFaceDialogOpen(false);
-    if (currentImage) {
-      onImageUpload(currentImage);
     }
   };
 
@@ -230,14 +211,14 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
         </div>
       </div>
 
-      {/* No Face Detected Dialog */}
       <Dialog open={noFaceDialogOpen} onOpenChange={setNoFaceDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>No Face Detected</DialogTitle>
+            <DialogTitle>No Human Face Detected</DialogTitle>
             <DialogDescription>
-              We couldn't detect a face in your uploaded image. For the best color analysis results, 
-              please upload a clear photo of your face in good lighting.
+              We couldn't detect a human face in your uploaded image. This app only provides 
+              color recommendations based on human skin tones. Please upload a clear photo 
+              of a face in good lighting.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -252,14 +233,11 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNoFaceDialogOpen(false)}>
+            <Button onClick={() => setNoFaceDialogOpen(false)}>
               Cancel
             </Button>
             <Button onClick={triggerFileInput}>
               Upload New Photo
-            </Button>
-            <Button variant="secondary" onClick={handleProceedAnyway}>
-              Proceed Anyway
             </Button>
           </DialogFooter>
         </DialogContent>
