@@ -1,88 +1,194 @@
-
 import { ColorInfo } from '@/components/ColorPalette';
 import { AnalysisResultData } from '@/components/AnalysisResult';
+import { detectFace, analyzeSkinUndertone } from './faceDetection';
 
-// Extract dominant colors from the image to create a stable fingerprint
-const extractDominantColors = (imageUrl: string): number => {
-  // In a production app, this would use computer vision to extract actual colors
-  // For our demo, we'll create a more stable hash based on color information in the image
+// Get a signature similarity score between two face signatures
+const compareFaceSignatures = (sig1: number[], sig2: number[]): number => {
+  if (!sig1 || !sig2 || sig1.length !== sig2.length) return 0;
   
-  // Extract the image data portion for consistency
-  const baseString = imageUrl.split(',')[1] || imageUrl;
+  let totalDifference = 0;
+  const totalValues = sig1.length;
   
-  // Create a consistent fingerprint based on sampling the image data
-  // We'll sample at regular intervals to catch dominant colors
-  const samplePoints = 20;
-  const sampleSize = Math.floor(baseString.length / samplePoints);
-  
-  let colorFingerprint = 0;
-  
-  // Sample the image data at regular intervals to catch dominant colors
-  for (let i = 0; i < samplePoints; i++) {
-    const sampleStart = i * sampleSize;
-    let sampleSum = 0;
-    
-    // Process a small chunk of the data to represent color information
-    for (let j = 0; j < Math.min(sampleSize, 50); j++) {
-      if (sampleStart + j < baseString.length) {
-        sampleSum += baseString.charCodeAt(sampleStart + j);
-      }
-    }
-    
-    // Combine the sample information into the fingerprint
-    colorFingerprint = ((colorFingerprint << 3) - colorFingerprint) + (sampleSum % 255);
-    colorFingerprint = colorFingerprint & colorFingerprint; // Convert to 32bit integer
+  for (let i = 0; i < totalValues; i++) {
+    // Calculate absolute difference for each value
+    const diff = Math.abs(sig1[i] - sig2[i]);
+    totalDifference += diff;
   }
   
-  // Ensure positive value
-  return Math.abs(colorFingerprint);
+  // Convert to a similarity score (0-100)
+  // Lower difference = higher similarity
+  const avgDifference = totalDifference / totalValues;
+  const similarityScore = Math.max(0, 100 - (avgDifference * 0.4));
+  
+  return similarityScore;
 };
 
-// Use the dominant colors to determine the person's undertone and seasonal palette
-export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
-  return new Promise((resolve) => {
-    // Extract a stable color fingerprint that should be similar across different photos of the same person
-    const colorFingerprint = extractDominantColors(imageUrl);
-    
-    // Log the fingerprint for debugging
-    console.log('Color fingerprint:', colorFingerprint);
-    
-    // Use the fingerprint to deterministically select an undertone
-    // This focuses on the person's coloring rather than the specific image
-    const undertones = ['warm', 'cool', 'neutral'] as const;
-    const undertoneIndex = colorFingerprint % undertones.length;
-    const undertone = undertones[undertoneIndex];
-    
-    // Deterministically select a seasonal palette based on the undertone and fingerprint
-    let seasonalPalette: 'spring' | 'summer' | 'autumn' | 'winter';
-    
-    if (undertone === 'warm') {
-      // For warm undertones, choose between spring and autumn
-      seasonalPalette = (colorFingerprint % 2 === 0) ? 'spring' : 'autumn';
-    } else if (undertone === 'cool') {
-      // For cool undertones, choose between summer and winter
-      seasonalPalette = (colorFingerprint % 2 === 0) ? 'summer' : 'winter';
-    } else {
-      // For neutral undertones, choose any season based on the fingerprint
-      const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
-      seasonalPalette = seasons[colorFingerprint % seasons.length];
+// Store previous analyses to maintain consistency
+const previousAnalyses: {
+  signature: number[];
+  result: AnalysisResultData;
+}[] = [];
+
+// Create a stable hash specifically for skin tone values
+const createSkinToneHash = (faceSignature: number[]): number => {
+  if (!faceSignature || faceSignature.length === 0) return 0;
+  
+  let hash = 0;
+  // Focus only on the central points which are likely to be face
+  const centralStart = Math.floor(faceSignature.length / 4);
+  const centralEnd = Math.floor(faceSignature.length * 3 / 4);
+  
+  // Process central face region for more stability
+  for (let i = centralStart; i < centralEnd && i < faceSignature.length; i += 3) {
+    if (i + 2 < faceSignature.length) {
+      const r = faceSignature[i];
+      const g = faceSignature[i + 1];
+      const b = faceSignature[i + 2];
+      
+      // Weight red channel more heavily for skin tone
+      hash = ((hash << 5) - hash + r) | 0;
+      hash = ((hash << 4) - hash + g) | 0;
+      hash = ((hash << 3) - hash + b) | 0;
     }
+  }
+  
+  return Math.abs(hash) % 1000000;
+};
+
+// Analyze image and provide consistent color recommendations
+export const analyzeImage = (imageUrl: string): Promise<AnalysisResultData> => {
+  return new Promise(async (resolve) => {
+    console.log('Starting face detection and skin tone analysis');
     
-    // Build the consistent result
-    const result: AnalysisResultData = {
-      undertone,
-      skinTone: getSkinToneName(undertone),
-      seasonalPalette,
-      bestColors: getBestColors(seasonalPalette),
-      neutralColors: getNeutralColors(seasonalPalette),
-      avoidColors: getAvoidColors(seasonalPalette)
-    };
-    
-    // Simulate processing time
-    setTimeout(() => {
-      resolve(result);
-    }, 2000);
+    try {
+      // Detect the face in the image with our enhanced detection
+      const { faceDetected, faceCanvas, faceSignature } = await detectFace(imageUrl);
+      console.log('Face detection result:', faceDetected);
+      
+      // If we have a face signature, check for previous analyses of similar faces
+      if (faceSignature && faceSignature.length > 0) {
+        // Try to find a previous analysis with a similar face
+        for (const prevAnalysis of previousAnalyses) {
+          const similarityScore = compareFaceSignatures(faceSignature, prevAnalysis.signature);
+          console.log('Similarity score with previous analysis:', similarityScore);
+          
+          // If faces are very similar (over 80% similar), use the previous result for consistency
+          if (similarityScore > 80) {
+            console.log('Using previous analysis result for consistency');
+            setTimeout(() => resolve(prevAnalysis.result), 1000);
+            return;
+          }
+        }
+      }
+      
+      // Create a stable hash from the face signature
+      const skinToneHash = faceSignature ? createSkinToneHash(faceSignature) : 0;
+      console.log('Skin tone hash:', skinToneHash);
+      
+      let undertone: 'warm' | 'cool' | 'neutral';
+      
+      if (faceDetected && faceCanvas) {
+        // If a face is detected, analyze the skin undertone directly from the face
+        console.log('Face detected, analyzing skin undertone');
+        const detectedUndertone = analyzeSkinUndertone(faceCanvas, faceSignature);
+        console.log('Detected undertone:', detectedUndertone);
+        
+        // Use the detected undertone but make it more consistent with the hash
+        undertone = getConsistentUndertone(detectedUndertone, skinToneHash);
+      } else {
+        // Even without clear face detection, if we have a signature, use it for consistency
+        if (faceSignature && faceSignature.length > 0) {
+          console.log('No clear face detected, but using face signature for consistency');
+          
+          // Use the hash based on the signature for consistent undertone selection
+          const undertones = ['warm', 'cool', 'neutral'] as const;
+          const undertoneIndex = skinToneHash % undertones.length;
+          undertone = undertones[undertoneIndex];
+        } else {
+          // Last resort fallback
+          console.log('Using complete fallback method');
+          undertone = 'neutral';
+        }
+      }
+      
+      console.log('Final undertone selection:', undertone);
+      
+      // Deterministically map undertone to seasonal palette using the hash
+      const seasonalPalette = mapUndertoneToSeason(undertone, skinToneHash);
+      console.log('Selected seasonal palette:', seasonalPalette);
+      
+      // Build the result with consistent mapping
+      const result: AnalysisResultData = {
+        undertone,
+        skinTone: getSkinToneName(undertone),
+        seasonalPalette,
+        bestColors: getBestColors(seasonalPalette),
+        neutralColors: getNeutralColors(seasonalPalette),
+        avoidColors: getAvoidColors(seasonalPalette)
+      };
+      
+      // Store this analysis for future consistency if we have a signature
+      if (faceSignature && faceSignature.length > 0) {
+        // Only store up to 5 previous analyses to avoid memory issues
+        if (previousAnalyses.length >= 5) {
+          previousAnalyses.shift(); // Remove oldest
+        }
+        
+        previousAnalyses.push({
+          signature: faceSignature,
+          result: result
+        });
+      }
+      
+      // Simulate processing time
+      setTimeout(() => {
+        resolve(result);
+      }, 1000);
+    } catch (error) {
+      console.error('Error in analyzeImage:', error);
+      // Provide a fallback result in case of error
+      const fallbackResult: AnalysisResultData = {
+        undertone: 'neutral',
+        skinTone: 'Neutral / Balanced',
+        seasonalPalette: 'summer',
+        bestColors: getBestColors('summer'),
+        neutralColors: getNeutralColors('summer'),
+        avoidColors: getAvoidColors('summer')
+      };
+      setTimeout(() => resolve(fallbackResult), 1000);
+    }
   });
+};
+
+// Make undertone detection more consistent by using hash as a secondary factor
+const getConsistentUndertone = (detectedUndertone: 'warm' | 'cool' | 'neutral', skinToneHash: number): 'warm' | 'cool' | 'neutral' => {
+  // If we detected a clear undertone (not neutral), trust it more
+  if (detectedUndertone !== 'neutral') return detectedUndertone;
+  
+  // For neutral (which could mean uncertain), use hash for consistency
+  const hashMod = skinToneHash % 3;
+  return hashMod === 0 ? 'warm' : hashMod === 1 ? 'cool' : 'neutral';
+};
+
+// Use consistent mapping from detected undertone to seasonal palette based on hash
+const mapUndertoneToSeason = (undertone: 'warm' | 'cool' | 'neutral', hashValue: number): 'spring' | 'summer' | 'autumn' | 'winter' => {
+  // Normalize hash to 0-99 range for consistent mapping
+  const hash = hashValue % 100;
+  
+  switch (undertone) {
+    case 'warm':
+      // For warm undertones, consistently map to either spring or autumn
+      return hash < 50 ? 'spring' : 'autumn';
+    case 'cool':
+      // For cool undertones, consistently map to either summer or winter
+      return hash < 50 ? 'summer' : 'winter';
+    case 'neutral':
+      // For neutral undertones, use hash to determine consistently
+      if (hash < 25) return 'spring';
+      if (hash < 50) return 'summer';
+      if (hash < 75) return 'autumn';
+      return 'winter';
+  }
 };
 
 const getSkinToneName = (undertone: 'warm' | 'cool' | 'neutral'): string => {
