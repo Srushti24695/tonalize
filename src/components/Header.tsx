@@ -9,7 +9,7 @@ const Header = () => {
           Skin Tone Analysis
         </div>
         <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
-          Tonalize
+          undertoneally
         </h1>
         <p className="text-muted-foreground text-center max-w-lg mt-2">
           Upload your photo to discover your skin's undertones and find your perfect color palette

@@ -3,7 +3,8 @@ import React, { useState, useRef } from 'react';
 import { Upload, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { detectFace } from '@/utils/faceDetection';
+import { validateFaceInImage } from '@/utils/faceDetection';
+import FaceValidationDialog from './FaceValidationDialog';
 
 interface ImageUploaderProps {
   onImageUpload: (image: string) => void;
@@ -13,75 +14,11 @@ interface ImageUploaderProps {
 const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzing }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isFaceDetecting, setIsFaceDetecting] = useState(false);
+  const [validationDialog, setValidationDialog] = useState({
+    open: false,
+    message: ""
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const normalizeImage = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          
-          if (!ctx) {
-            reject(new Error('Could not get canvas context'));
-            return;
-          }
-          
-          // Always resize to exactly the same dimensions for consistency
-          const fixedWidth = 500;
-          const fixedHeight = 500;
-          
-          canvas.width = fixedWidth;
-          canvas.height = fixedHeight;
-          
-          // Fill with white background first to normalize transparency
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillRect(0, 0, fixedWidth, fixedHeight);
-          
-          // Draw image centered and cropped to fill the square
-          const sourceAspect = img.width / img.height;
-          const targetAspect = fixedWidth / fixedHeight;
-          
-          let sourceX = 0, sourceY = 0, sourceWidth = img.width, sourceHeight = img.height;
-          
-          if (sourceAspect > targetAspect) {
-            // Source is wider, crop sides
-            sourceWidth = img.height * targetAspect;
-            sourceX = (img.width - sourceWidth) / 2;
-          } else {
-            // Source is taller, crop top/bottom
-            sourceHeight = img.width / targetAspect;
-            sourceY = (img.height - sourceHeight) / 2;
-          }
-          
-          // Apply strong normalization to deal with lighting differences
-          ctx.filter = 'contrast(1.2) brightness(1.05) saturate(0.9)';
-          ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, fixedWidth, fixedHeight);
-          ctx.filter = 'none';
-          
-          // Always use exact same format and quality settings
-          const normalizedImage = canvas.toDataURL('image/jpeg', 0.9);
-          resolve(normalizedImage);
-        };
-        
-        img.onerror = () => {
-          reject(new Error('Failed to load image'));
-        };
-        
-        img.src = e.target?.result as string;
-      };
-      
-      reader.onerror = () => {
-        reject(new Error('Error reading file'));
-      };
-      
-      reader.readAsDataURL(file);
-    });
-  };
 
   const handleFileChange = async (file: File) => {
     if (!file) return;
@@ -92,32 +29,27 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
       return;
     }
 
-    try {
-      setIsFaceDetecting(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const result = reader.result as string;
+      setPreviewUrl(result);
       
-      const normalizedImage = await normalizeImage(file);
-      setPreviewUrl(normalizedImage);
+      // Validate if a face is visible in the image
+      const validation = await validateFaceInImage(result);
       
-      const { faceDetected } = await detectFace(normalizedImage);
-      setIsFaceDetecting(false);
-      
-      if (!faceDetected) {
-        toast.warning("No face detected clearly. Analysis may be less accurate.", {
-          duration: 5000,
-          description: "For best results, use a clear photo of your face."
+      if (validation.isValid) {
+        onImageUpload(result);
+      } else {
+        setValidationDialog({
+          open: true,
+          message: validation.message
         });
       }
-      
-      onImageUpload(normalizedImage);
-    } catch (error) {
-      setIsFaceDetecting(false);
-      toast.warning("Couldn't analyze the face. Using whole image instead.", {
-        duration: 3000
-      });
-      if (previewUrl) {
-        onImageUpload(previewUrl);
-      }
-    }
+    };
+    reader.onerror = () => {
+      toast.error('Error reading the file');
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -144,6 +76,14 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
       fileInputRef.current.click();
     }
   };
+  
+  const closeValidationDialog = () => {
+    setValidationDialog({
+      open: false,
+      message: ""
+    });
+    setPreviewUrl(null);
+  };
 
   return (
     <div className="w-full max-w-md mx-auto mb-10 animate-fade-up animate-stagger-1">
@@ -162,7 +102,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
             </div>
             <h3 className="text-lg font-medium mb-2">Upload your photo</h3>
             <p className="text-sm text-muted-foreground text-center mb-6">
-              For best results, upload a clear photo of your face in natural lighting
+              Drag and drop or select a clear, well-lit photo of your face
             </p>
             <input
               type="file"
@@ -189,7 +129,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
               <Button
                 variant="outline"
                 onClick={triggerFileInput}
-                disabled={isAnalyzing || isFaceDetecting}
+                disabled={isAnalyzing}
                 className="flex-1"
               >
                 Change Photo
@@ -202,14 +142,15 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isAnalyzin
                 accept="image/jpeg, image/png, image/jpg"
               />
             </div>
-            {isFaceDetecting && (
-              <div className="text-center text-sm text-muted-foreground animate-pulse">
-                Detecting face...
-              </div>
-            )}
           </div>
         )}
       </div>
+      
+      <FaceValidationDialog 
+        open={validationDialog.open}
+        onClose={closeValidationDialog}
+        message={validationDialog.message}
+      />
     </div>
   );
 };
